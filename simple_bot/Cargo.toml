@@ -1,0 +1,34 @@
+[package]
+name = "simple_bot"
+version = "0.1.0"
+edition = "2021"
+authors = ["LovesAsuna", "iulx0"]
+license = "AGPL"
+description = "一个自用QQ机器人"
+repository = "https://github.com/LovesAsuna/SimpleBot"
+keywords = ["QQ", "Bot", "Rust"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proc_qq = { git = "https://github.com/niuhuan/rust_proc_qq.git", branch = "master" }
+tracing-subscriber = "0.3.17"
+serde = { version = "*", features = ["derive"] }
+tokio = { version = "*", features = ["full"] }
+serde_yaml = "0.9.21"
+serde_json = "*"
+async-trait = "*"
+anyhow = "*"
+regex = "*"
+lazy_static = "*"
+reqwest = { version = "*", features = ["json"] }
+visdom = "0.5.10"
+chrono = "0.4.24"
+rbdc-sqlite = "4.3"
+rbatis = "4.3"
+rbs = "4.3"
+rand = "*"
+thirtyfour = "*"
+futures = "*"
+base64 = "0.21"
+simple_bot_macros = { path = "../simple_bot_macros" }

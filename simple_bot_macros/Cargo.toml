@@ -1,0 +1,16 @@
+[package]
+name = "simple_bot_macros"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+syn = "2.0"
+quote = "*"
+proc-macro2 = "1.0"
+proc_qq = { git = "https://github.com/niuhuan/rust_proc_qq.git", branch = "master" }
+anyhow = "*"
+serde = "*"
+serde_json = "*"
+
+[lib]
+proc-macro = true
