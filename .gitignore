@@ -17,3 +17,8 @@ SimpleBot.iml
 
 config.yml
 device.json
+
+sqlite.db
+sqlite.db-shm
+sqlite.db-wal
+qrcode.png

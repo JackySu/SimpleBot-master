@@ -1,5 +1,6 @@
 use crate::plugin::{Action, CommandPlugin, Plugin};
 use crate::model::div::{D1PlayerStats, D2PlayerStats, ProfileDTO, StatsDTO, UbiUser};
+use crate::tracing::*;
 
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
@@ -100,7 +101,7 @@ pub async fn check_expiration_date() -> anyhow::Result<()> {
     while exp < now && login_counts < 5 {
         login_ubi().await?;
         login_counts += 1;
-        println!("Renewed Ubi ticket at {}", now.to_rfc3339());
+        info!("Renewed Ubi ticket at {}", now.to_rfc3339());
         let expiration = UBI_EXPIRATION.lock().unwrap().clone();
         exp = DateTime::parse_from_rfc3339(&expiration)
             .unwrap()
@@ -136,7 +137,7 @@ pub async fn login_ubi() -> anyhow::Result<()> {
         .await?;
 
     if !resp["errorCode"].is_null() {
-        println!("{:#?}", resp);
+        error!("{:#?}", resp);
         return Err(anyhow!("Failed to login to ubi"));
     }
 
@@ -280,20 +281,20 @@ pub async fn get_player_stats_by_name(
     while let Some(result) = stream.next().await {
         let resp = result?.json::<Value>().await?;
         if !resp["errorCode"].is_null() {
-            println!("{:#?}", resp);
+            error!("{:#?}", resp);
             return Err(anyhow!("Failed to get stats for user {}", &profiles[i].id));
         }
         let profile = &mut profiles[i];
         match UbiUser::store_user_name(&profile.id, &profile.name.clone().unwrap_or("?".to_string())).await {
-            Ok(_) => println!("Created or update user {}", &profile.id),
+            Ok(_) => info!("Created or update user {}", &profile.id),
             Err(e) => {
-                println!("Failed to create or update user {}: {:?}", &profile.id, e)
+                warn!("Failed to create or update user {}: {:?}", &profile.id, e)
             }
         }
         let name = match &profile.name {
             Some(n) => (*n).clone(),
             None => {
-                println!("Failed to get name for user {}", &profile.id);
+                error!("Failed to get name for user {}", &profile.id);
                 let url = format!(
                     "https://public-ubiservices.ubi.com/v2/profiles?userId={}&platformType=uplay",
                     &profile.id
@@ -314,9 +315,9 @@ pub async fn get_player_stats_by_name(
         };
 
         match UbiUser::store_user_name(&profile.id, &name).await {
-            Ok(_) => println!("Stored name {} for user {}", &name, &profile.id),
+            Ok(_) => info!("Stored name {} for user {}", &name, &profile.id),
             Err(e) => {
-                println!(
+                warn!(
                     "Failed to store name {} for user {}: {:?}",
                     &name, &profile.id, e
                 );
@@ -387,9 +388,9 @@ pub async fn get_div2_player_stats(
 
     } else {
         match UbiUser::store_user_name(&profiles[0].id, &profiles[0].name.clone().unwrap_or("?".to_string())).await {
-            Ok(_) => println!("Created or update user {}", &profiles[0].id),
+            Ok(_) => info!("Created or update user {}", &profiles[0].id),
             Err(e) => {
-                println!("Failed to create or update user {}: {:?}", &profiles[0].id, e)
+                warn!("Failed to create or update user {}: {:?}", &profiles[0].id, e)
             }
         }
     }
@@ -397,9 +398,9 @@ pub async fn get_div2_player_stats(
     let p = &profiles[0];
     let p_name = p.name.clone().unwrap_or("".to_string());
     match UbiUser::store_user_name(&p.id, &p_name).await {
-        Ok(_) => println!("Stored name {} for user {}", &p_name, &p.id),
+        Ok(_) => info!("Stored name {} for user {}", &p_name, &p.id),
         Err(e) => {
-            println!(
+            warn!(
                 "Failed to store name {} for user {}: {:?}",
                 &name, &p.id, e
             );
