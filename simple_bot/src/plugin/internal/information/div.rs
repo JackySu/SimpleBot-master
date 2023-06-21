@@ -56,20 +56,26 @@ async fn tracker(event: &MessageEvent, n: Option<String>, name: Option<String>) 
 
     let msg = match n.unwrap().as_str() {
         "1" => {
-            let stats = get_div1_player_stats(&name.unwrap()).await?;
-            if stats.is_empty() {
-                event.send_message_to_source("未找到该玩家".parse_message_chain()).await.unwrap();
-                return Ok(false);
+            match get_div1_player_stats(&name.unwrap()).await
+            {
+                Ok(stats) => stats.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\n"),
+                Err(e) => {
+                    error!("{:?}", e);
+                    event.send_message_to_source(format!("未找到该玩家\n错误: {:?}", e).parse_message_chain()).await.unwrap();
+                    return Ok(false)
+                }
             }
-            stats.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\n")
         },
         "2" => { 
-            let stats = get_div2_player_stats(&name.unwrap()).await?;
-            if stats.is_empty() {
-                event.send_message_to_source("未找到该玩家".parse_message_chain()).await.unwrap();
-                return Ok(false);
+            match get_div2_player_stats(&name.unwrap()).await
+            {
+                Ok(stats) => stats.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\n"),
+                Err(e) => {
+                    error!("{:?}", e);
+                    event.send_message_to_source(format!("未找到该玩家\n错误: {:?}", e).parse_message_chain()).await.unwrap();
+                    return Ok(false)
+                }
             }
-            stats.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("\n")
         },
         _ => "请输入正确的n 应等于1或2".to_string(),
     };
