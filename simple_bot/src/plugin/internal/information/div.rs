@@ -352,6 +352,10 @@ pub async fn get_div1_player_stats(
             .map(|r| async move {
                 let p = r.profile;
                 let s = r.stats;
+                let mut main_story = s[4]["value"].as_str().unwrap_or("0 %").to_string();
+                if let Ok(float_value) = main_story.parse::<f64>() {
+                    main_story = format!("{:.0} %", float_value * 100.0f64);
+                }
                 D1PlayerStats {
                     id: p.id.clone(),
                     name: p.name.unwrap_or("".to_string()),
@@ -359,7 +363,7 @@ pub async fn get_div1_player_stats(
                     dz_rank: s[1]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
                     ug_rank: s[2]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
                     playtime: s[3]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0) / 3600,
-                    main_story: s[4]["value"].as_str().unwrap_or("0 %").to_string(),
+                    main_story: main_story,
                     rogue_kills: s[5]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
                     items_extracted: s[6]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
                     skill_kills: s[7]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
