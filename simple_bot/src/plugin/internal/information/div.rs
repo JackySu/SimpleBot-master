@@ -105,9 +105,11 @@ pub async fn check_expiration_date() -> anyhow::Result<()> {
 
     let mut login_counts = 0;
     while exp < now && login_counts < 5 {
+        info!("等候5秒后刷新育碧API连接 ticket");
+        std::thread::sleep(std::time::Duration::from_secs(5));
         login_ubi().await?;
         login_counts += 1;
-        info!("Renewed Ubi ticket at {}", now.to_rfc3339());
+        info!("已刷新 ticket 当前时间：{}", now.to_rfc3339());
         let expiration = UBI_EXPIRATION.lock().unwrap().clone();
         exp = DateTime::parse_from_rfc3339(&expiration)
             .unwrap()
@@ -115,7 +117,7 @@ pub async fn check_expiration_date() -> anyhow::Result<()> {
         now = Utc::now() + chrono::Duration::minutes(5);
     }
     if login_counts >= 5 {
-        return Err(anyhow!("Failed to login after 5 trials"));
+        return Err(anyhow!("5次尝试均失败，无法刷新 ticket"));
     }
     Ok(())
 }
@@ -144,7 +146,7 @@ pub async fn login_ubi() -> anyhow::Result<()> {
 
     if !resp["errorCode"].is_null() {
         error!("{:#?}", resp);
-        return Err(anyhow!("Failed to login to ubi"));
+        return Err(anyhow!("登录育碧API失败"));
     }
 
     let mut ticket = UBI_TICKET.lock().unwrap();
@@ -165,7 +167,7 @@ pub async fn find_player_id_by_db(
     let mut db = crate::RB.lock().await;
     let users = UbiUser::select_by_name(db.deref_mut(), name)
         .await
-        .map_err(|e| anyhow!("Failed to find player {} by db\nError: {}", name, e))?;
+        .map_err(|e| anyhow!("数据库中找不到玩家 {} \n错误: {}", name, e))?;
 
     let mut profiles = vec![];
     for user in users {
@@ -179,7 +181,7 @@ pub async fn find_player_id_by_api(
     id: Option<&str>
 ) -> anyhow::Result<Vec<ProfileDTO>> {
     if name.is_none() && id.is_none() {
-        return Err(anyhow!("Both name and id are None"));
+        return Err(anyhow!("缺少玩家名或UUID"));
     }
     if let Err(e) = check_expiration_date().await {
         return Err(anyhow!(e))
@@ -218,7 +220,7 @@ pub async fn find_player_id_by_api(
 
     let profiles = &resp["profiles"];
     if profiles.is_array() && profiles.as_array().unwrap().is_empty() {
-        return Err(anyhow!("Failed to find player with name: {} id: {} by api", name.clone().unwrap_or(""), id.clone().unwrap_or("")));
+        return Err(anyhow!("API无法找到玩家 {} id: {}", name.clone().unwrap_or(""), id.clone().unwrap_or("")));
     }
 
     Ok(profiles
@@ -288,15 +290,10 @@ pub async fn get_player_stats_by_name(
         let resp = result?.json::<Value>().await?;
         if !resp["errorCode"].is_null() {
             error!("{:#?}", resp);
-            return Err(anyhow!("Failed to get stats for user {}", &profiles[i].id));
+            return Err(anyhow!("玩家ID {} 找不到该游戏存档", &profiles[i].id));
         }
         let profile = &mut profiles[i];
-        match UbiUser::store_user_name(&profile.id, &profile.name.clone().unwrap_or("?".to_string())).await {
-            Ok(_) => info!("Created or update user {}", &profile.id),
-            Err(e) => {
-                warn!("Failed to create or update user {}: {:?}", &profile.id, e)
-            }
-        }
+
         let name = match &profile.name {
             Some(n) => (*n).clone(),
             None => {
@@ -337,7 +334,7 @@ pub async fn get_player_stats_by_name(
     }
 
     if results.is_empty() {
-        return Err(anyhow!("Failed to find player {} by either api or db", name));
+        return Err(anyhow!("API/数据库均找不到玩家 {}", name));
     }
     Ok(results)
 }
@@ -382,7 +379,6 @@ pub async fn get_div1_player_stats(
 // pub static DIV2_SPACE_ID: &str = "60859c37-949d-49e2-8fc8-6d8dc40f1a9e";
 pub static TRACKER_URL: &str = "https://api.tracker.gg/api/v2/division-2/standard/profile/uplay/";
 pub async fn get_div2_player_stats(
-    
     name: &str,
 ) -> anyhow::Result<Vec<D2PlayerStats>> {
     let mut profiles = find_player_id_by_api(Some(name), None).await.unwrap_or(vec![]);
@@ -390,18 +386,10 @@ pub async fn get_div2_player_stats(
     if profiles.is_empty() {
         profiles = find_player_id_by_db(&name).await?;
         if profiles.is_empty() {
-            return Err(anyhow!("Failed to find player {} by either api or db", name));
+            return Err(anyhow!("API/数据库均找不到玩家 {}", name));
         }
         for profile in profiles.iter_mut() {
             profile.name = find_player_id_by_api(None, Some(&profile.id)).await?[0].name.clone();
-        }
-
-    } else {
-        match UbiUser::store_user_name(&profiles[0].id, &profiles[0].name.clone().unwrap_or("?".to_string())).await {
-            Ok(_) => info!("Created or update user {}", &profiles[0].id),
-            Err(e) => {
-                warn!("Failed to create or update user {}: {:?}", &profiles[0].id, e)
-            }
         }
     }
 
@@ -426,7 +414,7 @@ pub async fn get_div2_player_stats(
     let stats = &metadata["data"]["segments"][0]["stats"];
     
     if stats.is_null() {
-        return Err(anyhow!("player {} exists but no profile for this game", name));
+        return Err(anyhow!("用户 {} 存在但无该游戏存档", name));
     }
     Ok(vec![D2PlayerStats {
         id: p.id.clone(),
@@ -505,8 +493,8 @@ pub async fn get_webdriver() -> WebDriverResult<WebDriver> {
     let _ = caps.add_chrome_arg("--ssl-protocol=any");
     let _ = caps.add_chrome_arg("--ignore-ssl-errors=true");
     let _ = caps.add_chrome_arg("--disable-extensions");
-    let _ = caps.add_chrome_arg("start-maximized");
-    let _ = caps.add_chrome_arg("window-size=1280,720");
+    let _ = caps.add_chrome_arg("start-minimized");
+    let _ = caps.add_chrome_arg("window-size=800,600");
     let _ = caps.add_chrome_arg("disable-infobars");
     let _ = caps.add_chrome_option("detach", true);
 

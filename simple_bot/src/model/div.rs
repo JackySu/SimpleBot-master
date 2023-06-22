@@ -28,7 +28,7 @@ impl Display for D1PlayerStats {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "玩家名：{}\n玩家等级: {}\n暗区等级: {}\n地下等级: {}\n游戏时间: {}\n主线任务：{}\nNPC击杀: {}\n红名击杀: {}\n技能击杀: {}\n回收物品: {}\n装等分数: {}\n所有名字：{:?}\n",
+            "玩家名：{}\n玩家等级: {}\n暗区等级: {}\n地下等级: {}\n游戏时间: {}h\n主线任务：{}\nNPC击杀: {}\n红名击杀: {}\n技能击杀: {}\n回收物品: {}\n装等分数: {}\n所有名字：{:?}\n",
             self.name, self.level, self.dz_rank, self.ug_rank, self.playtime, self.main_story, self.total_kills, self.rogue_kills, self.skill_kills, self.items_extracted, self.gear_score, self.all_names)
     }
 }
@@ -74,7 +74,7 @@ impl Display for D2PlayerStats {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "玩家名：{}\n游戏时间: {}\n玩家等级: {}\nPVP击杀: {}\nNPC击杀: {}\n爆头数: {}\n爆头击杀: {}\n霰弹枪击杀: {}\n冲锋枪击杀: {}\n手枪击杀: {}\n步枪击杀: {}\n玩家击杀: {}\n总经验: {}\nPVE经验: {}\nPVP经验: {}\n战队经验: {}\n狙击专精击杀: {}\n生存专精击杀: {}\n爆破专精击杀: {}\nE币: {}\n功勋数: {}\n功勋分数: {}\n装等分数: {}\n暗区等级: {}\n暗区时间: {}\n红名击杀: {}\n红名时间: {}\n最长红名: {}\n冲突等级: {}\n冲突时间: {}\n所有名字：{:?}\n",
+            "玩家名：{}\n游戏时间: {}h\n玩家等级: {}\nPVP击杀: {}\nNPC击杀: {}\n爆头数: {}\n爆头击杀: {}\n霰弹枪击杀: {}\n冲锋枪击杀: {}\n手枪击杀: {}\n步枪击杀: {}\n玩家击杀: {}\n总经验: {}\nPVE经验: {}\nPVP经验: {}\n战队经验: {}\n狙击专精击杀: {}\n生存专精击杀: {}\n爆破专精击杀: {}\nE币: {}\n功勋数: {}\n功勋分数: {}\n装等分数: {}\n暗区等级: {}\n暗区时间: {}h\n红名击杀: {}\n红名时间: {}h\n最长红名: {}m\n冲突等级: {}\n冲突时间: {}h\n所有名字：{:?}\n",
             self.name, self.total_playtime, self.level, self.pvp_kills, self.npc_kills, self.headshots, self.headshot_kills, self.shotgun_kills, self.smg_kills, self.pistol_kills, self.rifle_kills, self.player_kills, self.xp_total, self.pve_xp, self.pvp_xp, self.clan_xp, self.sharpshooter_kills, self.survivalist_kills, self.demolitionist_kills, self.e_credit, self.commendation_count, self.commendation_score, self.gear_score, self.dz_rank, self.dz_playtime, self.rogues_killed, self.rogue_playtime, self.longest_rogue, self.conflict_rank, self.conflict_playtime, self.all_names)
     }
 }

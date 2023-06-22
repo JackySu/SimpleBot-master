@@ -1,3 +1,7 @@
+#![allow(ambiguous_glob_reexports)]
+#![allow(hidden_glob_reexports)]
+
+
 use lazy_static::lazy_static;
 pub use proc_qq::re_exports::*;
 pub use proc_qq::*;
