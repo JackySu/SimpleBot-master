@@ -23,7 +23,6 @@ pub struct Div {
 
 impl Div {
     pub fn new() -> Self {
-        
         Self {
             actions: vec![make_action!(tracker)],
         }
@@ -492,10 +491,11 @@ pub async fn get_webdriver() -> WebDriverResult<WebDriver> {
     let _ = caps.set_disable_web_security();
     let _ = caps.add_chrome_arg("--ssl-protocol=any");
     let _ = caps.add_chrome_arg("--ignore-ssl-errors=true");
+    let _ = caps.add_chrome_arg("--disable-gpu");
     let _ = caps.add_chrome_arg("--disable-extensions");
-    let _ = caps.add_chrome_arg("start-minimized");
-    let _ = caps.add_chrome_arg("window-size=800,600");
-    let _ = caps.add_chrome_arg("disable-infobars");
+    let _ = caps.add_chrome_arg("--start-maximized");
+    let _ = caps.add_chrome_arg("--window-position=-10000,0");
+    let _ = caps.add_chrome_arg("--window-size=1,1");
     let _ = caps.add_chrome_option("detach", true);
 
     let port = crate::CONFIG.divtrack.chrome_port;
