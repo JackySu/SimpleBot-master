@@ -124,5 +124,5 @@ impl UbiUser {
 }
 
 crud!(UbiUser {});
-impl_select!(UbiUser{select_by_name(name: &str) => "`where name = #{name}`"});
+impl_select!(UbiUser{select_by_name(name: &str) => "`where lower(name) = lower(#{name})`"});
 impl_select!(UbiUser{select_by_id(id: &str) => "`where id = #{id}`"});
