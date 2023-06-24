@@ -235,10 +235,11 @@ pub async fn find_player_id_by_api(
 
 pub async fn get_player_profiles_by_name(
     name: &str,
+    use_db: bool,
 ) -> anyhow::Result<Vec<ProfileDTO>> {
     let mut profiles = find_player_id_by_api(Some(name), None).await.unwrap_or(vec![]);
-    if profiles.is_empty() {
-        profiles = find_player_id_by_db(name).await?;
+    if use_db {
+        profiles.append(&mut find_player_id_by_db(name).await?);
     }
     Ok(profiles)
 }
@@ -264,7 +265,7 @@ pub async fn get_player_stats_by_name(
         (*session_id).parse::<HeaderValue>().unwrap(),
     );
 
-    let mut profiles = get_player_profiles_by_name(name).await?;
+    let mut profiles = get_player_profiles_by_name(name, true).await?;
 
     let mut results: Vec<StatsDTO> = vec![];
     let urls = profiles
