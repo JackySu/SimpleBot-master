@@ -241,6 +241,7 @@ pub async fn get_player_profiles_by_name(
     if use_db {
         profiles.append(&mut find_player_id_by_db(name).await?);
     }
+    profiles.dedup_by(|a, b| a.id.eq(&b.id));
     Ok(profiles)
 }
 
