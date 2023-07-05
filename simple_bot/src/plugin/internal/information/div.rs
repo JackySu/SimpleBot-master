@@ -104,8 +104,6 @@ pub async fn check_expiration_date() -> anyhow::Result<()> {
 
     let mut login_counts = 0;
     while exp < now && login_counts < 5 {
-        info!("等候5秒后刷新育碧API连接 ticket");
-        std::thread::sleep(std::time::Duration::from_secs(5));
         login_ubi().await?;
         login_counts += 1;
         info!("已刷新 ticket 当前时间：{}", now.to_rfc3339());
@@ -241,6 +239,7 @@ pub async fn get_player_profiles_by_name(
     if use_db {
         profiles.append(&mut find_player_id_by_db(name).await?);
     }
+    profiles.sort_by_key(|p| p.id.clone());
     profiles.dedup_by(|a, b| a.id.eq(&b.id));
     Ok(profiles)
 }
