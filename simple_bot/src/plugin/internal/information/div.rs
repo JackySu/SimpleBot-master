@@ -2,17 +2,16 @@ use crate::plugin::{Action, CommandPlugin, Plugin};
 use crate::model::div::{D1PlayerStats, D2PlayerStats, ProfileDTO, StatsDTO, UbiUser};
 use crate::tracing::*;
 
+use tokio::{task::JoinSet, sync::Mutex};
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
 use reqwest::{self, header::HeaderValue};
 use thirtyfour::prelude::*;
 use serde_json::{from_str, Value};
-use std::ops::DerefMut;
-use std::sync::Mutex;
-use anyhow::anyhow;
-use futures::{future::join_all, StreamExt};
 use base64::Engine;
 
+use std::ops::DerefMut;
+use anyhow::anyhow;
+use lazy_static::lazy_static;
 use async_trait::async_trait;
 use proc_qq::{MessageChainParseTrait, MessageEvent, MessageSendToSourceTrait};
 use simple_bot_macros::{action, make_action};
@@ -96,7 +95,7 @@ lazy_static! {
 }
 
 pub async fn check_expiration_date() -> anyhow::Result<()> {
-    let expiration = UBI_EXPIRATION.lock().unwrap().clone();
+    let expiration = UBI_EXPIRATION.lock().await.clone();
     let mut exp = DateTime::parse_from_rfc3339(&expiration)
         .unwrap()
         .with_timezone(&Utc);
@@ -107,7 +106,7 @@ pub async fn check_expiration_date() -> anyhow::Result<()> {
         login_ubi().await?;
         login_counts += 1;
         info!("已刷新 ticket 当前时间：{}", now.to_rfc3339());
-        let expiration = UBI_EXPIRATION.lock().unwrap().clone();
+        let expiration = UBI_EXPIRATION.lock().await.clone();
         exp = DateTime::parse_from_rfc3339(&expiration)
             .unwrap()
             .with_timezone(&Utc);
@@ -146,13 +145,13 @@ pub async fn login_ubi() -> anyhow::Result<()> {
         return Err(anyhow!("登录育碧API失败"));
     }
 
-    let mut ticket = UBI_TICKET.lock().unwrap();
+    let mut ticket = UBI_TICKET.lock().await;
     *ticket = resp["ticket"].as_str().unwrap().to_string();
 
-    let mut session_id = UBI_SESSION_ID.lock().unwrap();
+    let mut session_id = UBI_SESSION_ID.lock().await;
     *session_id = resp["sessionId"].as_str().unwrap().to_string();
 
-    let mut expiration = UBI_EXPIRATION.lock().unwrap();
+    let mut expiration = UBI_EXPIRATION.lock().await;
     *expiration = resp["expiration"].as_str().unwrap().to_string();
 
     Ok(())
@@ -184,14 +183,14 @@ pub async fn find_player_id_by_api(
         return Err(anyhow!(e))
     }
 
-    let ticket = UBI_TICKET.lock().unwrap().clone();
+    let ticket = UBI_TICKET.lock().await.clone();
     let mut headers = get_common_header();
     headers.insert(
         "Authorization",
         format!("Ubi_v1 t={}", &*ticket).parse().unwrap(),
     );
 
-    let session_id = UBI_SESSION_ID.lock().unwrap().clone();
+    let session_id = UBI_SESSION_ID.lock().await.clone();
     headers.insert(
         "Ubi-SessionId",
         (*session_id).parse::<HeaderValue>().unwrap(),
@@ -253,13 +252,13 @@ pub async fn get_player_stats_by_name(
     }
 
     let mut headers = get_common_header();
-    let ticket = UBI_TICKET.lock().unwrap().clone();
+    let ticket = UBI_TICKET.lock().await.clone();
     headers.insert(
         "Authorization",
         format!("Ubi_v1 t={}", &ticket).parse().unwrap(),
     );
 
-    let session_id = UBI_SESSION_ID.lock().unwrap().clone();
+    let session_id = UBI_SESSION_ID.lock().await.clone();
     headers.insert(
         "Ubi-SessionId",
         (*session_id).parse::<HeaderValue>().unwrap(),
@@ -280,14 +279,15 @@ pub async fn get_player_stats_by_name(
         .collect::<Vec<String>>();
 
     let client = reqwest::Client::new();
-    let stream =
-        futures::stream::iter(urls).map(|url| client.get(&url).headers(headers.clone()).send());
-
-    let mut stream = stream.buffered(5);
+    let mut handles = JoinSet::new();
+    for url in &urls {
+        handles.spawn(client.get(&*url).headers(headers.clone()).send());
+    }
 
     let mut i = 0;
-    while let Some(result) = stream.next().await {
-        let resp = result?.json::<Value>().await?;
+    for _ in 0..urls.len() {
+        let result = handles.join_next().await.unwrap()??;
+        let resp = result.json::<Value>().await?;
         if !resp["errorCode"].is_null() {
             error!("{:#?}", resp);
             return Err(anyhow!("玩家ID {} 找不到该游戏存档", &profiles[i].id));
@@ -344,36 +344,44 @@ pub async fn get_div1_player_stats(
     name: &str,
 ) -> anyhow::Result<Vec<D1PlayerStats>> {
     let res = get_player_stats_by_name(name, DIV1_SPACE_ID).await?;
-    Ok(join_all(
-        res.into_iter()
-            .map(|r| async move {
-                let p = r.profile;
-                let s = r.stats;
-                let mut main_story = s[4]["value"].as_str().unwrap_or("0 %").to_string();
-                if let Ok(float_value) = main_story.parse::<f64>() {
-                    main_story = format!("{:.0} %", float_value * 100.0f64);
-                }
-                D1PlayerStats {
-                    id: p.id.clone(),
-                    name: p.name.unwrap_or("".to_string()),
-                    level: s[0]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    dz_rank: s[1]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    ug_rank: s[2]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    playtime: s[3]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0) / 3600,
-                    main_story: main_story,
-                    rogue_kills: s[5]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    items_extracted: s[6]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    skill_kills: s[7]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    total_kills: s[8]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    gear_score: s[11]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
-                    all_names: UbiUser::get_user_names_by_id(p.id.clone().as_str())
-                        .await
-                        .unwrap_or(vec![]),
-                }
-            })
-            .collect::<Vec<_>>(),
-    )
-    .await)
+    let mut handles = JoinSet::new();
+    let mut results: Vec<D1PlayerStats> = vec![];
+    for r in res.into_iter() {
+        handles.spawn(async move {
+            let p = r.profile;
+            let s = r.stats;
+            let mut main_story = s[4]["value"].as_str().unwrap_or("0 %").to_string();
+            if let Ok(float_value) = main_story.parse::<f64>() {
+                main_story = format!("{:.0} %", float_value * 100.0f64);
+            }
+            D1PlayerStats {
+                id: p.id.clone(),
+                name: p.name.unwrap_or("".to_string()),
+                level: s[0]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                dz_rank: s[1]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                ug_rank: s[2]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                playtime: s[3]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0) / 3600,
+                main_story,
+                rogue_kills: s[5]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                items_extracted: s[6]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                skill_kills: s[7]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                total_kills: s[8]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                gear_score: s[11]["value"].as_str().unwrap().parse::<u64>().unwrap_or(0),
+                all_names: UbiUser::get_user_names_by_id(p.id.clone().as_str())
+                    .await
+                    .unwrap_or(vec![]),
+            }
+        });
+    }
+    for _ in 0..handles.len() {
+        let r = handles.join_next().await.unwrap();
+        if r.is_err() {
+            error!("Error when querying div1 stats for {}: {:?}", &name, r.unwrap_err());
+            continue;
+        }
+        results.push(r.unwrap());
+    }
+    Ok(results)
 }
 
 // pub static DIV2_SPACE_ID: &str = "60859c37-949d-49e2-8fc8-6d8dc40f1a9e";
@@ -393,65 +401,79 @@ pub async fn get_div2_player_stats(
         }
     }
 
-    let p = &profiles[0];
-    let p_name = p.name.clone().unwrap_or("".to_string());
-    match UbiUser::store_user_name(&p.id, &p_name).await {
-        Ok(_) => info!("Stored name {} for user {}", &p_name, &p.id),
-        Err(e) => {
-            warn!(
-                "Failed to store name {} for user {}: {:?}",
-                &name, &p.id, e
-            );
+    let mut handles = JoinSet::new();
+    let mut results: Vec<D2PlayerStats> = vec![];
+
+    for p in profiles {
+        handles.spawn(async move {
+            let p_name = p.name.clone().unwrap_or("".to_string());
+            match UbiUser::store_user_name(&p.id, &p_name).await {
+                Ok(_) => info!("Stored name {} for user {}", &p_name, &p.id),
+                Err(e) => {
+                    warn!(
+                        "Failed to store name {} for user {}: {:?}",
+                        &p_name, &p.id, e
+                    );
+                }
+            }
+        
+            let driver = get_webdriver().await.unwrap();
+            driver.goto(format!("{}{}", TRACKER_URL, p.name.clone().unwrap_or("".to_string()))).await.unwrap();
+            let data = driver.find(By::Css("body")).await.unwrap().text().await.unwrap();
+            driver.quit().await.unwrap();
+        
+            let metadata: Value = from_str(&data).unwrap_or(Value::Null);
+            let stats = &metadata["data"]["segments"][0]["stats"];
+            
+            D2PlayerStats {
+                id: p.id.clone(),
+                name: p.name.clone().unwrap_or("".to_string()),
+                total_playtime: stats["timePlayed"]["value"].as_u64().unwrap_or(0) / 3600,
+                level: stats["highestPlayerLevel"]["value"].as_u64().unwrap_or(0),
+                pvp_kills: stats["killsPvP"]["value"].as_u64().unwrap_or(0),
+                npc_kills: stats["killsNpc"]["value"].as_u64().unwrap_or(0),
+                headshots: stats["headshots"]["value"].as_u64().unwrap_or(0),
+                headshot_kills: stats["killsHeadshot"]["value"].as_u64().unwrap_or(0),
+                shotgun_kills: stats["killsWeaponShotgun"]["value"].as_u64().unwrap_or(0),
+                smg_kills: stats["killsWeaponSubMachinegun"]["value"].as_u64().unwrap_or(0),
+                pistol_kills: stats["killsWeaponPistol"]["value"].as_u64().unwrap_or(0),
+                rifle_kills: stats["killsWeaponRifle"]["value"].as_u64().unwrap_or(0),
+                player_kills: stats["playersKilled"]["value"].as_u64().unwrap_or(0),
+                xp_total: stats["xPTotal"]["value"].as_u64().unwrap_or(0),
+                pve_xp: stats["xPPve"]["value"].as_u64().unwrap_or(0),
+                pvp_xp: stats["xPPvp"]["value"].as_u64().unwrap_or(0),
+                clan_xp: stats["xPClan"]["value"].as_u64().unwrap_or(0),
+                sharpshooter_kills: stats["killsSpecializationSharpshooter"]["value"].as_u64().unwrap_or(0),
+                survivalist_kills: stats["killsSpecializationSurvivalist"]["value"].as_u64().unwrap_or(0),
+                demolitionist_kills: stats["killsSpecializationDemolitionist"]["value"].as_u64().unwrap_or(0),
+                e_credit: stats["eCreditBalance"]["value"].as_u64().unwrap_or(0),
+                commendation_count: stats["commendationCount"]["value"].as_u64().unwrap_or(0),
+                commendation_score: stats["commendationScore"]["value"].as_u64().unwrap_or(0),
+                gear_score: stats["latestGearScore"]["value"].as_u64().unwrap_or(0),
+                dz_rank: stats["rankDZ"]["value"].as_u64().unwrap_or(0),
+                dz_playtime: stats["timePlayedDarkZone"]["value"].as_u64().unwrap_or(0) / 3600,
+                rogues_killed: stats["roguesKilled"]["value"].as_u64().unwrap_or(0),
+                rogue_playtime: stats["timePlayedRogue"]["value"].as_u64().unwrap_or(0) / 3600,
+                longest_rogue: stats["timePlayedRogueLongest"]["value"].as_u64().unwrap_or(0) / 60,
+                conflict_rank: stats["latestConflictRank"]["value"].as_u64().unwrap_or(0),
+                conflict_playtime: stats["timePlayedConflict"]["value"].as_u64().unwrap_or(0) / 3600,
+                all_names: UbiUser::get_user_names_by_id(p.id.clone().as_str())
+                    .await
+                    .unwrap_or(vec![])
+            }
+        });
+    }
+
+    for _ in 0..handles.len() {
+        let r = handles.join_next().await.unwrap();
+        if r.is_err() {
+            error!("Error when querying div2 stats for {}: {:?}", &name, r.unwrap_err());
+            continue;
         }
+        results.push(r.unwrap());
     }
+    Ok(results)
 
-    let driver = get_webdriver().await?;
-    driver.goto(format!("{}{}", TRACKER_URL, p.name.clone().unwrap_or("".to_string()))).await.unwrap();
-    let data = driver.find(By::Css("body")).await?.text().await?;
-    driver.quit().await?;
-
-    let metadata: Value = from_str(&data)?;
-    let stats = &metadata["data"]["segments"][0]["stats"];
-    
-    if stats.is_null() {
-        return Err(anyhow!("用户 {} 存在但无该游戏存档", name));
-    }
-    Ok(vec![D2PlayerStats {
-        id: p.id.clone(),
-        name: p.name.clone().unwrap_or("".to_string()),
-        total_playtime: stats["timePlayed"]["value"].as_u64().unwrap_or(0) / 3600,
-        level: stats["highestPlayerLevel"]["value"].as_u64().unwrap_or(0),
-        pvp_kills: stats["killsPvP"]["value"].as_u64().unwrap_or(0),
-        npc_kills: stats["killsNpc"]["value"].as_u64().unwrap_or(0),
-        headshots: stats["headshots"]["value"].as_u64().unwrap_or(0),
-        headshot_kills: stats["killsHeadshot"]["value"].as_u64().unwrap_or(0),
-        shotgun_kills: stats["killsWeaponShotgun"]["value"].as_u64().unwrap_or(0),
-        smg_kills: stats["killsWeaponSubMachinegun"]["value"].as_u64().unwrap_or(0),
-        pistol_kills: stats["killsWeaponPistol"]["value"].as_u64().unwrap_or(0),
-        rifle_kills: stats["killsWeaponRifle"]["value"].as_u64().unwrap_or(0),
-        player_kills: stats["playersKilled"]["value"].as_u64().unwrap_or(0),
-        xp_total: stats["xPTotal"]["value"].as_u64().unwrap_or(0),
-        pve_xp: stats["xPPve"]["value"].as_u64().unwrap_or(0),
-        pvp_xp: stats["xPPvp"]["value"].as_u64().unwrap_or(0),
-        clan_xp: stats["xPClan"]["value"].as_u64().unwrap_or(0),
-        sharpshooter_kills: stats["killsSpecializationSharpshooter"]["value"].as_u64().unwrap_or(0),
-        survivalist_kills: stats["killsSpecializationSurvivalist"]["value"].as_u64().unwrap_or(0),
-        demolitionist_kills: stats["killsSpecializationDemolitionist"]["value"].as_u64().unwrap_or(0),
-        e_credit: stats["eCreditBalance"]["value"].as_u64().unwrap_or(0),
-        commendation_count: stats["commendationCount"]["value"].as_u64().unwrap_or(0),
-        commendation_score: stats["commendationScore"]["value"].as_u64().unwrap_or(0),
-        gear_score: stats["latestGearScore"]["value"].as_u64().unwrap_or(0),
-        dz_rank: stats["rankDZ"]["value"].as_u64().unwrap_or(0),
-        dz_playtime: stats["timePlayedDarkZone"]["value"].as_u64().unwrap_or(0) / 3600,
-        rogues_killed: stats["roguesKilled"]["value"].as_u64().unwrap_or(0),
-        rogue_playtime: stats["timePlayedRogue"]["value"].as_u64().unwrap_or(0) / 3600,
-        longest_rogue: stats["timePlayedRogueLongest"]["value"].as_u64().unwrap_or(0) / 60,
-        conflict_rank: stats["latestConflictRank"]["value"].as_u64().unwrap_or(0),
-        conflict_playtime: stats["timePlayedConflict"]["value"].as_u64().unwrap_or(0) / 3600,
-        all_names: UbiUser::get_user_names_by_id(profiles[0].id.clone().as_str())
-            .await
-            .unwrap_or(vec![])
-    }])
 }
 
 use reqwest::header;
