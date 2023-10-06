@@ -1,7 +1,7 @@
 ## Origin
 此项目基于 [LovesAsuna](https://github.com/LovesAsuna) 的 [SimpleBot](https://github.com/LovesAsuna/SimpleBot)
 
-本人只是修改了其中的插件，保留了过程宏crate
+本人修复并增加了其中部分插件
 
 ### 增加的插件
 
